@@ -1,0 +1,553 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>115 管家</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #4e8cff;
+    --primary-dark: #3a6fd8;
+    --success: #52c41a;
+    --danger: #ff4d4f;
+    --warning: #faad14;
+    --bg: #f5f6fa;
+    --card: #fff;
+    --text: #1a1a2e;
+    --text-secondary: #6b7280;
+    --border: #e5e7eb;
+  }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .app {
+    max-width: 640px;
+    margin: 0 auto;
+    padding: 16px;
+  }
+  header {
+    display: flex; align-items: center; gap: 10px;
+    padding: 16px 0; margin-bottom: 20px;
+  }
+  header h1 { font-size: 22px; font-weight: 700; }
+  .status-dot {
+    display: inline-block; width: 10px; height: 10px;
+    border-radius: 50%; margin-left: auto;
+  }
+  .status-dot.online { background: var(--success); box-shadow: 0 0 6px rgba(82,196,26,0.4); }
+  .status-dot.offline { background: var(--danger); }
+
+  /* Tabs */
+  .tabs { display: flex; gap: 4px; margin-bottom: 16px; background: var(--card); border-radius: 12px; padding: 4px; }
+  .tab { flex: 1; padding: 10px; text-align: center; border: none; background: transparent; border-radius: 10px; font-size: 14px; font-weight: 500; color: var(--text-secondary); cursor: pointer; transition: all .2s; }
+  .tab.active { background: var(--primary); color: #fff; }
+  .tab:not(.active):hover { background: #f0f0f0; }
+
+  /* Card */
+  .card { background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+  /* Input */
+  .input-group { display: flex; flex-direction: column; gap: 10px; }
+  .input-group label { font-size: 13px; font-weight: 600; color: var(--text-secondary); }
+  .input-group input { width: 100%; padding: 12px 14px; border: 2px solid var(--border); border-radius: 10px; font-size: 15px; outline: none; transition: border-color .2s; }
+  .input-group input:focus { border-color: var(--primary); }
+  .input-row { display: flex; gap: 10px; }
+  .input-row input { flex: 1; }
+  .input-row button { white-space: nowrap; }
+
+  /* Buttons */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 10px 20px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; transition: all .2s; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-primary { background: var(--primary); color: #fff; }
+  .btn-primary:hover:not(:disabled) { background: var(--primary-dark); transform: translateY(-1px); }
+  .btn-success { background: var(--success); color: #fff; }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-outline { background: transparent; border: 2px solid var(--border); color: var(--text); }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-block { width: 100%; }
+
+  /* Share Info */
+  .share-info { margin-top: 16px; padding: 16px; background: #f8f9ff; border-radius: 10px; border: 1px solid #e8ecff; }
+  .share-info h3 { font-size: 16px; margin-bottom: 8px; }
+  .share-info .meta { display: flex; flex-wrap: wrap; gap: 12px; font-size: 13px; color: var(--text-secondary); margin-bottom: 10px; }
+  .share-info .meta span { background: #fff; padding: 3px 10px; border-radius: 6px; border: 1px solid var(--border); }
+  .share-info .files { max-height: 200px; overflow-y: auto; }
+  .share-info .file-item { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; border-bottom: 1px solid var(--border); }
+  .file-folder { color: var(--primary); font-weight: 600; cursor: pointer; padding: 2px 6px; border-radius: 4px; }
+  .file-folder:hover { background: #eef2ff; }
+  .share-info .file-item:last-child { border-bottom: none; }
+  .file-icon { font-size: 16px; }
+  .file-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .file-size { color: var(--text-secondary); font-size: 12px; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; }
+  .badge-success { background: #f0fdf4; color: #166534; }
+  .badge-danger { background: #fef2f2; color: #991b1b; }
+  .badge-warning { background: #fffbeb; color: #92400e; }
+
+  .expired-msg { color: var(--danger); font-size: 13px; margin-top: 8px; }
+
+  /* Link List */
+  .link-card { padding: 14px; border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+  .link-card h4 { font-size: 14px; margin-bottom: 4px; }
+  .link-card .info { font-size: 12px; color: var(--text-secondary); display: flex; flex-wrap: wrap; gap: 6px; }
+  .link-card .actions { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-secondary); }
+  .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* Loading */
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid rgba(78,140,255,0.3); border-top-color: var(--primary); border-radius: 50%; animation: spin .6s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Alert / Toast */
+  .toast { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); padding: 12px 24px; border-radius: 10px; font-size: 14px; z-index: 9999; max-width: 90%; box-shadow: 0 4px 20px rgba(0,0,0,0.15); animation: slideDown .3s ease; }
+  .toast.success { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; }
+  .toast.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .toast.info { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
+  @keyframes slideDown { from { opacity: 0; transform: translateX(-50%) translateY(-10px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
+
+  /* Save panel */
+  .save-panel { margin-top: 12px; padding: 14px; background: #f0fdf4; border-radius: 10px; border: 1px solid #bbf7d0; display: none; }
+  .save-panel.show { display: block; }
+  .save-panel .save-path { font-weight: 600; font-size: 13px; margin-bottom: 8px; }
+
+  @media (max-width: 480px) {
+    .app { padding: 12px; }
+    .card { padding: 14px; }
+    .share-info { padding: 12px; }
+    .input-row { flex-direction: column; }
+  }
+</style>
+</head>
+<body>
+
+<div class="app" id="app">
+  <header>
+    <h1>📁 115 管家</h1>
+    <span class="status-dot" id="cookieStatus" title="Cookie 状态"></span>
+  </header>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab active" data-tab="check">🔍 检查</button>
+    <button class="tab" data-tab="settings">⚙️ 设置</button>
+  </div>
+
+  <!-- Tab: Check -->
+  <div id="tab-check" class="tab-content">
+    <div class="card">
+      <div class="input-group">
+        <label>115 分享链接</label>
+        <input id="linkInput" type="url" placeholder="粘贴链接... https://115cdn.com/s/xxxxxx" autofocus>
+        <div class="input-row">
+          <input id="pwdInput" type="text" placeholder="访问码（可选）">
+          <button class="btn btn-primary" id="checkBtn">🔍 检查</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Share Info -->
+    <div id="shareInfo" class="card" style="display:none">
+      <div class="share-info">
+        <h3 id="shareTitle"></h3>
+        <div class="meta" id="shareMeta"></div>
+        <div id="shareFileList" class="files"></div>
+        <div id="expiredMsg" class="expired-msg"></div>
+      </div>
+
+      <div class="save-panel" id="savePanel">
+        <div class="save-path">
+          <label style="font-size:13px;font-weight:600;color:var(--text-secondary);display:block;margin-bottom:4px">📂 保存到目录</label>
+          <input id="savePathInput" type="text" style="width:100%;padding:8px 10px;border:2px solid #bbf7d0;border-radius:6px;font-size:14px;outline:none" placeholder="资源库/115转存/目录名称">
+        </div>
+        <button class="btn btn-success btn-block" id="saveBtn">📥 转存选中文件</button>
+      </div>
+    </div>
+
+    <div id="checkLoading" class="card" style="display:none">
+      <div style="text-align:center;padding:20px">
+        <div class="spinner"></div>
+        <div style="margin-top:10px;color:var(--text-secondary)">正在检查链接...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab: Settings -->
+  <div id="tab-settings" class="tab-content" style="display:none">
+    <div class="card">
+      <h3 style="font-size:16px;margin-bottom:12px">⚙️ 设置</h3>
+      <div class="input-group">
+        <label>115 Cookie <span id="cookieStatusText" style="font-weight:normal;font-size:12px"></span></label>
+        <textarea id="cookieInput" rows="4" style="width:100%;padding:10px 12px;border:2px solid var(--border);border-radius:10px;font-size:13px;font-family:monospace;outline:none;resize:vertical" placeholder="粘贴 Cookie... UID=xxx; CID=xxx; SEID=xxx; KID=xxx;"></textarea>
+        <div style="font-size:12px;color:var(--text-secondary);margin-top:-4px">
+          浏览器打开 115.com → F12 → Application → Cookies → 115.com → 复制全部
+        </div>
+        <button class="btn btn-primary btn-block" id="saveCookieBtn">💾 保存 Cookie</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ===== State =====
+const state = {
+  currentShareCode: null,
+  currentUrl: null,
+  currentPassword: null,
+  currentTitle: null,
+  currentFileIds: null,
+  selectedFileIds: new Set(),
+  lastPath: '',
+  browseCid: '0',
+  breadcrumbs: [{ name: '全部文件', cid: '0' }],
+};
+
+// ===== API (always POST, supports both GET-style and POST) =====
+async function api(path, data) {
+  const opts = {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data || {}),
+  };
+  const res = await fetch(path, opts);
+  return res.json();
+}
+
+// ===== Toast =====
+function toast(msg, type = 'info') {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(() => { el.remove(); }, 3000);
+}
+
+// ===== Tabs =====
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.querySelectorAll('.tab-content').forEach(c => c.style.display = 'none');
+    document.getElementById('tab-' + tab.dataset.tab).style.display = 'block';
+    if (tab.dataset.tab === 'settings') loadSettings();
+  });
+});
+
+// ===== Cookie Status =====
+async function checkCookie() {
+  const dot = document.getElementById('cookieStatus');
+  try {
+    const res = await api('/api/check-cookie');
+    dot.className = 'status-dot ' + (res.ok ? 'online' : 'offline');
+    const st = document.getElementById('cookieStatusText');
+    if (st) st.textContent = res.ok ? '✅ 有效' : '❌ 无效或未设置';
+  } catch(e) {
+    dot.className = 'status-dot offline';
+  }
+}
+checkCookie();
+
+// ===== Settings =====
+async function loadSettings() {
+  const res = await api('/api/cookie');
+  if (res.ok && res.has_cookie) {
+    document.getElementById('cookieInput').placeholder = '当前已有 Cookie，粘贴新值覆盖...';
+  }
+  checkCookie();
+}
+
+document.getElementById('saveCookieBtn').addEventListener('click', async () => {
+  const cookie = document.getElementById('cookieInput').value.trim();
+  if (!cookie) { toast('请粘贴 Cookie', 'error'); return; }
+  
+  const btn = document.getElementById('saveCookieBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 验证中...';
+  
+  try {
+    const res = await api('/api/cookie', { cookie });
+    if (res.ok) {
+      toast('✅ Cookie 已保存并验证通过', 'success');
+      document.getElementById('cookieInput').value = '';
+      checkCookie();
+    } else {
+      toast('❌ ' + (res.error || 'Cookie 无效'), 'error');
+    }
+  } catch (e) {
+    toast('请求失败', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 保存 Cookie';
+  }
+});
+
+// ===== Check Link =====
+let checkInProgress = false;
+
+document.getElementById('checkBtn').addEventListener('click', checkLink);
+document.getElementById('linkInput').addEventListener('keydown', e => {
+  if (e.key === 'Enter') checkLink();
+});
+
+async function checkLink() {
+  if (checkInProgress) return;
+  const url = document.getElementById('linkInput').value.trim();
+  if (!url) { toast('请先输入分享链接', 'error'); return; }
+
+  checkInProgress = true;
+  document.getElementById('checkBtn').disabled = true;
+  document.getElementById('checkLoading').style.display = 'block';
+  document.getElementById('shareInfo').style.display = 'none';
+  document.getElementById('savePanel').classList.remove('show');
+
+  const password = document.getElementById('pwdInput').value.trim();
+
+  try {
+    const res = await api('/api/info', { url, password });
+
+    if (res.ok) {
+      state.currentShareCode = res.share_code;
+      state.currentUrl = url;
+      state.currentPassword = password;
+      state.currentTitle = res.title;
+
+      displayShareInfo(res);
+      document.getElementById('shareInfo').style.display = 'block';
+    } else {
+      toast(res.error + (res.hint ? ': ' + res.hint : ''), 'error');
+    }
+  } catch (e) {
+    toast('请求失败: ' + e.message, 'error');
+  } finally {
+    checkInProgress = false;
+    document.getElementById('checkBtn').disabled = false;
+    document.getElementById('checkLoading').style.display = 'none';
+  }
+}
+
+function displayShareInfo(info) {
+  state.currentFileIds = Object.keys(info.file_id_map || {});
+  state.selectedFileIds = new Set(state.currentFileIds); // 默认全选
+  state.browseCid = info.browse_cid || '0';
+  if (info.browse_cid === '0' || !info.browse_cid) {
+    state.breadcrumbs = [{ name: '全部文件', cid: '0' }];
+  }
+
+  document.getElementById('shareTitle').textContent = '📁 ' + (info.title || '浏览中');
+
+  const meta = document.getElementById('shareMeta');
+  meta.innerHTML = `
+    <span>📦 ${info.file_count} 项</span>
+    <span>💾 ${info.size_str}</span>
+    <span>👤 ${info.user_name}</span>
+    <span class="badge ${info.is_expired ? 'badge-danger' : 'badge-success'}">
+      ${info.is_expired ? '❌ 已过期' : '✅ 有效'}
+    </span>
+  `;
+
+  const expiredMsg = document.getElementById('expiredMsg');
+  expiredMsg.textContent = info.is_expired ? '⚠️ 该分享链接已过期，无法转存' : '';
+  expiredMsg.style.display = info.is_expired ? 'block' : 'none';
+
+  // 文件列表 + 复选框
+  const idMap = info.file_id_map || {};
+  const fileList = document.getElementById('shareFileList');
+  
+  // 面包屑导航
+  let breadHtml = '';
+  if (info.browse_cid && info.browse_cid !== '0') {
+    breadHtml = '<div class="breadcrumb" style="display:flex;gap:4px;align-items:center;margin-bottom:8px;font-size:13px">' +
+      '<button class="btn btn-sm btn-outline" onclick="browseUp()">← 返回</button>' +
+      '<span style="color:var(--text-secondary);margin:0 4px">/</span>' +
+      state.breadcrumbs.map((b, i) => {
+        if (i === state.breadcrumbs.length - 1) {
+          return '<span style="font-weight:600">' + escHtml(b.name) + '</span>';
+        }
+        const safeCid = b.cid.replace(/'/g, "\\'");
+        return '<button class="btn btn-sm btn-outline" onclick="browseTo(\'' + safeCid + '\')">' + escHtml(b.name) + '</button>';
+      }).join('<span style="color:var(--text-secondary)"> / </span>') +
+    '</div>';
+  }
+
+  fileList.innerHTML = breadHtml + [
+    // 全选/取消
+    '<div class="file-item" style="background:#f0f0ff;border-radius:6px;padding:4px 6px;margin-bottom:6px">',
+      '<label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;font-weight:600">',
+        '<input type="checkbox" id="selectAllChk" checked onchange="toggleSelectAll(this.checked);updateSaveBtnText()">',
+        '<span>全选 / 取消</span>',
+      '</label>',
+    '</div>',
+    ...info.files.map(f => {
+      let fid = '';
+      for (const [k, v] of Object.entries(idMap)) {
+        if (v === f.name) { fid = k; break; }
+      }
+      const sizeStr = f.size ? (f.size / 1024 / 1024).toFixed(1) + 'MB' : '';
+      const isFolder = f.is_dir;
+      if (isFolder) {
+        const safeName = escHtml(f.name).replace(/'/g, "\\'");
+        return `<div class="file-item">
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1" onclick="event.stopPropagation()">
+            <input type="checkbox" class="file-chk" value="${fid}" checked onchange="updateSelectAllState();updateSaveBtnText()">
+            <span class="file-icon">📁</span>
+            <span class="file-name file-folder" onclick="event.stopPropagation();event.preventDefault();browseToFolder('${fid}','${safeName}')">
+              ${escHtml(f.name)}
+            </span>
+            <span style="font-size:12px;color:var(--text-secondary)">↪ 进入</span>
+          </label>
+        </div>`;
+      }
+      return `<div class="file-item">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;flex:1">
+          <input type="checkbox" class="file-chk" value="${fid}" checked onchange="updateSelectAllState();updateSaveBtnText()">
+          <span class="file-icon">📄</span>
+          <span class="file-name">${escHtml(f.name)}</span>
+          <span class="file-size">${sizeStr}</span>
+        </label>
+      </div>`;
+    })
+  ].join('');
+
+  // 填充保存路径（取点号前的部分作为目录名）
+  const cleanTitle = info.title.split('.').filter(Boolean)[0] || info.title;
+  const pathInput = document.getElementById('savePathInput');
+  if (!pathInput.value || pathInput.value === state.lastPath) {
+    pathInput.value = '资源库/115转存/' + cleanTitle;
+  }
+  state.lastPath = pathInput.value;
+  
+  // Show save panel
+  const savePanel = document.getElementById('savePanel');
+  savePanel.classList.add('show');
+  savePanel.style.display = info.is_expired ? 'none' : 'block';
+  updateSaveBtnText();
+}
+
+function updateSaveBtnText() {
+  const checked = document.querySelectorAll('.file-chk:checked').length;
+  const total = document.querySelectorAll('.file-chk').length;
+  const btn = document.getElementById('saveBtn');
+  if (total === 0 || checked === 0) {
+    btn.textContent = '请选择要转存的文件';
+    btn.disabled = true;
+  } else if (checked === total) {
+    btn.textContent = `📥 转存全部 ${total} 项`;
+    btn.disabled = false;
+  } else {
+    btn.textContent = `📥 转存选中的 ${checked} 项`;
+    btn.disabled = false;
+  }
+}
+
+// ===== 文件夹浏览 =====
+let browseLoading = false;
+
+async function browseTo(cid) {
+  if (browseLoading) return;
+  browseLoading = true;
+  document.getElementById('checkLoading').style.display = 'block';
+  
+  try {
+    const res = await api('/api/info', {
+      url: state.currentUrl,
+      password: state.currentPassword,
+      cid: cid,
+    });
+    if (res.ok) {
+      state.browseCid = cid;
+      // 更新面包屑（截断到点击的那个层级）
+      const idx = state.breadcrumbs.findIndex(b => b.cid === cid);
+      if (idx >= 0) {
+        state.breadcrumbs = state.breadcrumbs.slice(0, idx + 1);
+      }
+      displayShareInfo(res);
+    } else {
+      toast('浏览失败: ' + (res.error || ''), 'error');
+    }
+  } catch (e) {
+    toast('请求失败', 'error');
+  } finally {
+    browseLoading = false;
+    document.getElementById('checkLoading').style.display = 'none';
+  }
+}
+
+async function browseToFolder(fid, name) {
+  // 添加新层级到面包屑
+  state.breadcrumbs.push({ name: name, cid: fid });
+  await browseTo(fid);
+}
+
+async function browseUp() {
+  if (state.breadcrumbs.length <= 1) return;
+  const prev = state.breadcrumbs[state.breadcrumbs.length - 2];
+  state.breadcrumbs = state.breadcrumbs.slice(0, -1);
+  await browseTo(prev.cid);
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.file-chk').forEach(cb => cb.checked = checked);
+}
+
+function updateSelectAllState() {
+  const chks = document.querySelectorAll('.file-chk');
+  const allChk = document.getElementById('selectAllChk');
+  if (allChk) allChk.checked = chks.length > 0 && Array.from(chks).every(c => c.checked);
+}
+
+// ===== Save to 115 =====
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  if (!state.currentShareCode) return;
+  
+  // 收集选中的 file_ids
+  const checkedIds = [];
+  document.querySelectorAll('.file-chk:checked').forEach(cb => {
+    if (cb.value) checkedIds.push(cb.value);
+  });
+  
+  const btn = document.getElementById('saveBtn');
+  btn.disabled = true;
+  btn.textContent = '⏳ 转存中...';
+
+  const targetPath = document.getElementById('savePathInput').value.trim() || '资源库/115转存/' + (state.currentTitle || '未命名');
+
+  btn.textContent = `⏳ 转存中... (${checkedIds.length} 项)`;
+
+  try {
+    const res = await api('/api/save', {
+      url: state.currentUrl,
+      password: state.currentPassword,
+      target_path: targetPath,
+      file_ids: checkedIds.join(','),
+    });
+
+    if (res.ok) {
+      toast(`✅ 已转存到: ${targetPath}`, 'success');
+    } else {
+      toast('❌ ' + res.error, 'error');
+    }
+  } catch (e) {
+    toast('请求失败: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    updateSaveBtnText();
+  }
+});
+
+// ===== Helpers =====
+function escHtml(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+
+</script>
+</body>
+</html>
