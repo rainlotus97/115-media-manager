@@ -515,17 +515,8 @@ def get_pan():
     return Pan115(cookie)
 
 
-def get_user_cookie(user_id: int) -> str:
-    """获取用户 cookie：优先查 user_115_config 表，回退到全局 config。"""
-    conn = database.get_db()
-    try:
-        row = conn.execute(
-            "SELECT cookie FROM user_115_config WHERE user_id = ?", (user_id,)
-        ).fetchone()
-        if row and row["cookie"]:
-            return row["cookie"]
-    finally:
-        conn.close()
+def get_user_cookie(user_id: int = None) -> str:
+    """获取 115 cookie：多端共享同一份，走全局 config。"""
     return config.get("cookie", "")
 
 def parse_share_url(url):
