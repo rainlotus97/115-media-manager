@@ -50,9 +50,6 @@ const currentEpisodes = computed(() => {
     .sort((a, b) => a.episode_number - b.episode_number)
 })
 
-// Selection
-const selectedEp = ref<any>(null)
-
 // Stats
 const totalCached = computed(() =>
   allEpisodes.value.filter(ep => ep.cached_file).length
@@ -90,30 +87,23 @@ onMounted(() => {
   loadEpisodes()
 })
 
-// Auto-reload episodes when season changes (already cached, fast)
-watch(activeSeason, () => {})
+watch(activeSeason, () => {/* lazy load handled by eps API */})
 
-function selectEpisode(ep: any) {
-  if (selectedEp.value?.season_number === ep.season_number &&
-      selectedEp.value?.episode_number === ep.episode_number) {
-    selectedEp.value = null // deselect
-  } else {
-    selectedEp.value = ep
-  }
+function onPosterError(e: Event) {
+  const img = e.currentTarget as HTMLImageElement
+  if (!img) return
+  img.style.display = 'none'
+  const next = img.nextElementSibling as HTMLElement
+  if (next) next.classList.add('show')
 }
 
-// Background: selected ep still → season poster → show backdrop
+// Background: season poster → backdrop
 const bgImage = computed(() => {
-  if (selectedEp.value?.still_path) return selectedEp.value.still_path
   if (seasonPosters.value[activeSeason.value]) return seasonPosters.value[activeSeason.value]
   return detail.value?.backdrop_path || ''
 })
 
-const displayOverview = computed(() => {
-  if (selectedEp.value?.overview) return selectedEp.value.overview
-  if (selectedEp.value?.name) return `第 ${selectedEp.value.episode_number} 集：${selectedEp.value.name}`
-  return detail.value?.overview || ''
-})
+const displayOverview = computed(() => detail.value?.overview || '')
 
 // TMDB ID editing
 const editingTmdb = ref(false)
@@ -191,7 +181,7 @@ function getRegionLabel(r: string) {
 <template>
   <Teleport to="body">
     <div class="modal-overlay" @click.self="emit('close')">
-      <div class="modal-card" @click.self="selectedEp = null">
+      <div class="modal-card">
         <button class="close-btn" @click="emit('close')">✕</button>
 
         <!-- Background image -->
@@ -199,16 +189,12 @@ function getRegionLabel(r: string) {
           <img v-if="bgImage" :src="bgImage" alt="" />
           <div class="bg-gradient"></div>
           <!-- Episode overlay when selected -->
-          <div v-if="selectedEp" class="bg-ep-info">
-            <span class="bg-ep-num">第 {{ selectedEp.episode_number }} 集</span>
-            <span v-if="selectedEp.name" class="bg-ep-name">{{ selectedEp.name }}</span>
-          </div>
         </div>
 
         <div class="modal-body">
           <!-- Left column -->
           <div class="modal-left">
-            <img v-if="detail.poster_path" :src="detail.poster_path" class="poster" />
+            <img v-if="detail.poster_path" :src="detail.poster_path" class="poster" @error="onPosterError" />
             <div v-else class="poster placeholder"><span>🎬</span></div>
             <h2>{{ detail.title }}</h2>
             <div v-if="detail.original_title" class="orig">{{ detail.original_title }}</div>
@@ -295,8 +281,6 @@ function getRegionLabel(r: string) {
                   file_size: ep.cached_file.file_size,
                   fid: ep.cached_file.fid
                 } : null"
-                :selected="selectedEp?.season_number === ep.season_number && selectedEp?.episode_number === ep.episode_number"
-                @click="selectEpisode(ep)"
               />
             </div>
             <div v-else class="empty-eps">
@@ -329,6 +313,22 @@ function getRegionLabel(r: string) {
   box-shadow: 0 24px 80px rgba(0,0,0,0.5);
 }
 
+.modal-body {
+  display: flex; flex: 1; min-height: 0;
+  margin-top: -50px; position: relative; z-index: 1;
+}
+
+.modal-right {
+  flex: 1; overflow-y: auto; min-height: 0;
+  padding: 16px 20px 20px 0;
+}
+
+.modal-left {
+  width: 280px; flex-shrink: 0; overflow-y: auto;
+  padding: 16px 24px 20px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+
 .close-btn {
   position: absolute; top: 12px; right: 12px; z-index: 10;
   width: 32px; height: 32px; border: none; border-radius: 50%;
@@ -339,14 +339,6 @@ function getRegionLabel(r: string) {
 @media (max-width: 768px) { .modal-bg { height: 160px; } }
 .modal-bg img { width: 100%; height: 100%; object-fit: cover; transition: opacity .3s ease; }
 .bg-gradient { position: absolute; inset: 0; background: linear-gradient(to top, var(--bg-secondary) 0%, transparent 50%, rgba(0,0,0,0.1) 100%); }
-
-.bg-ep-info {
-  position: absolute; bottom: 40px; left: 24px; z-index: 2;
-  display: flex; flex-direction: column; gap: 2px;
-  text-shadow: 0 2px 8px rgba(0,0,0,0.8);
-}
-.bg-ep-num { font-size: 20px; font-weight: 800; color: #fff; }
-.bg-ep-name { font-size: 13px; color: rgba(255,255,255,0.85); }
 
 .modal-body {
   display: flex; flex: 1; overflow: hidden;
@@ -362,7 +354,8 @@ function getRegionLabel(r: string) {
 }
 
 .poster { width: 140px; height: 210px; border-radius: var(--radius); object-fit: cover; background: var(--bg-elevated); box-shadow: 0 4px 20px rgba(0,0,0,0.6); }
-.poster.placeholder { display: flex; align-items: center; justify-content: center; font-size: 48px; }
+.poster.placeholder { display: none; align-items: center; justify-content: center; font-size: 48px; }
+.poster.placeholder.show { display: flex; }
 
 .modal-left h2 { font-size: 20px; font-weight: 700; }
 .orig { font-size: 12px; color: var(--text-muted); }
@@ -419,12 +412,14 @@ function getRegionLabel(r: string) {
   .modal-card {
     width: 100vw; height: 100vh; max-width: none;
     border-radius: 0; animation: slideIn .3s ease;
+    overflow-y: auto;
   }
   @keyframes slideIn { from { transform: translateX(100%) } to { transform: translateX(0) } }
-  .modal-body { flex-direction: column; overflow-y: auto; }
-  .modal-left { width: 100%; padding: 12px 16px; }
-  .modal-right { padding: 12px 16px; }
+  .modal-body { flex-direction: column; overflow-y: auto; min-height: 0; flex: 1; }
+  .modal-left { width: 100%; padding: 12px 16px; overflow: visible; }
+  .modal-right { padding: 12px 16px; overflow: visible; min-height: 0; }
   .ep-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .detail-panel { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
 
 /* iPad */

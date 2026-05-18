@@ -78,8 +78,7 @@ def login(username: str, password: str) -> dict:
         if user["password_hash"] != _hash_password(password):
             return {"ok": False, "error": "密码错误"}
 
-        # 删除旧 session，创建新的
-        conn.execute("DELETE FROM user_sessions WHERE user_id = ?", (user["id"],))
+        # 创建新 session（不踢其他设备）
         token = _generate_token()
         expires = datetime.utcnow() + timedelta(days=30)
         conn.execute(

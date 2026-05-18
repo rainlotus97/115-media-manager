@@ -134,6 +134,9 @@ export const api = {
   syncWatchlist: (id: number) =>
     post<any>(`/api/media/${id}/sync`, {}, getToken()),
 
+  syncWatchlistAll: () =>
+    post<any>('/api/media/sync-all', {}, getToken()),
+
   getMediaEpisodes: (id: number, season?: number) =>
     get<any>(`/api/media/${id}/episodes${season ? '?season=' + season : ''}`, getToken()),
 

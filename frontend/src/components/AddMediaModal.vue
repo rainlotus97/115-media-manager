@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
 import { api } from '../api'
 import { useToast } from '../composables/useToast'
 import type { TMDBSearchItem, TMDBDetailResponse } from '../types'
@@ -17,18 +17,22 @@ const searching = ref(false)
 const results = ref<TMDBSearchItem[]>([])
 const searched = ref(false)
 
-const selectedTmdb = ref<TMDBSearchItem | null>(null)
-const selectedDetail = ref<TMDBDetailResponse | null>(null)
-const loadingDetail = ref(false)
-const path115 = ref('')
-const adding = ref(false)
+// 防抖搜索
+let searchTimer: ReturnType<typeof setTimeout> | null = null
+watch(query, (q) => {
+  if (searchTimer) clearTimeout(searchTimer)
+  if (!q.trim()) { results.value = []; searched.value = false; return }
+  searchTimer = setTimeout(() => doSearch(q.trim()), 400)
+})
 
-const typeLabels: Record<string, string> = { anime: '动漫', movie: '电影', tv: '电视剧' }
+watch(mediaType, () => {
+  if (query.value.trim()) {
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => doSearch(query.value.trim()), 400)
+  }
+})
 
-async function handleSearch() {
-  const q = query.value.trim()
-  if (!q) { toast('请输入关键词', 'error'); return }
-
+async function doSearch(q: string) {
   searching.value = true
   searched.value = true
   try {
@@ -40,12 +44,17 @@ async function handleSearch() {
       toast(res.error || '搜索失败', 'error')
       results.value = []
     }
-  } catch {
-    toast('搜索请求失败', 'error')
-  } finally {
-    searching.value = false
-  }
+  } catch { toast('搜索请求失败', 'error') }
+  finally { searching.value = false }
 }
+
+const selectedTmdb = ref<TMDBSearchItem | null>(null)
+const selectedDetail = ref<TMDBDetailResponse | null>(null)
+const loadingDetail = ref(false)
+const path115 = ref('')
+const adding = ref(false)
+
+const typeLabels: Record<string, string> = { anime: '动漫', movie: '电影', tv: '电视剧' }
 
 async function selectItem(item: TMDBSearchItem) {
   selectedTmdb.value = item
@@ -138,9 +147,8 @@ function backToSearch() {
               v-model="query"
               type="text"
               :placeholder="`搜索${typeLabels[mediaType]}...`"
-              @keydown.enter="handleSearch"
-            />
-            <button class="btn btn-primary" :disabled="searching" @click="handleSearch">
+/>
+            <button class="btn btn-primary" :disabled="searching" @click="query.trim() && doSearch(query.trim())">
               <span v-if="searching" class="spinner"></span>
               <span v-else>搜索</span>
             </button>

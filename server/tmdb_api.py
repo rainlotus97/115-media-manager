@@ -159,7 +159,7 @@ def get_details(tmdb_id: int, media_type: str = "tv") -> dict:
         poster = f"{IMAGE_BASE}/w500{result['poster_path']}"
     backdrop = None
     if result.get("backdrop_path"):
-        backdrop = f"{IMAGE_BASE}/w1280{result['backdrop_path']}"
+        backdrop = f"{IMAGE_BASE}/original{result['backdrop_path']}" if result.get('backdrop_path') else None
 
     # 题材标签
     genres = [g["name"] for g in result.get("genres", [])]

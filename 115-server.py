@@ -862,7 +862,7 @@ def api_media_episodes(user, media_id):
                     for s in detail.get("seasons", []):
                         sn = s["season_number"]
                         if s.get("poster_path"):
-                            season_posters[sn] = f"{TMDB_IMAGE}/w500{s['poster_path']}"
+                            season_posters[sn] = f"{TMDB_IMAGE}/original{s['poster_path']}"
             except Exception:
                 pass
 
@@ -889,6 +889,29 @@ def api_media_episodes(user, media_id):
         })
     finally:
         conn.close()
+
+
+@app.route("/api/media/sync-all", methods=["POST"])
+@login_required
+def api_media_sync_all(user):
+    cookie = get_user_cookie(user["id"])
+    if not cookie:
+        return jsonify({"ok": False, "error": "未配置 115 Cookie"})
+    pan = Pan115(cookie)
+    conn = database.get_db()
+    try:
+        items = conn.execute(
+            "SELECT id, title FROM watchlist WHERE user_id = ? AND status = 'tracking'",
+            (user["id"],),
+        ).fetchall()
+    finally:
+        conn.close()
+
+    results = []
+    for w in items:
+        r = sync.sync_watchlist_item(w["id"], user["id"], pan)
+        results.append({"id": w["id"], "title": w["title"], "result": r.get("ok"), "detail": r.get("debug", "")})
+    return jsonify({"ok": True, "total": len(items), "results": results})
 
 
 @app.route("/api/media/<int:media_id>/sync", methods=["POST"])

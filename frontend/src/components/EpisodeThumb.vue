@@ -14,6 +14,17 @@ const emit = defineEmits<{
   click: []
 }>()
 
+function handleImgError(e: Event) {
+  const img = e.currentTarget as HTMLImageElement
+  if (!img) return
+  img.style.display = 'none'
+  const parent = img.parentElement
+  if (parent) {
+    const placeholder = parent.querySelector('.ep-num-big')
+    if (placeholder) placeholder.classList.add('show')
+  }
+}
+
 const status = computed(() => {
   if (props.cachedFile) return 'cached'
   return 'missing'
@@ -34,7 +45,7 @@ function formatSize(bytes: number): string {
   >
     <!-- Still / placeholder -->
     <div class="ep-img">
-      <img v-if="stillUrl" :src="stillUrl" loading="lazy" />
+      <img v-if="stillUrl" :src="stillUrl" loading="lazy" @error="handleImgError" />
       <span v-else class="ep-num-big">
         <span class="ep-num-text">{{ episodeNumber }}</span>
         <span class="ep-num-label">EP</span>
@@ -94,6 +105,9 @@ function formatSize(bytes: number): string {
 }
 .ep-num-text { font-size: 36px; font-weight: 800; color: var(--text-muted); line-height: 1; }
 .ep-num-label { font-size: 10px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 2px; }
+
+.ep-num-big:not(.show) { display: none; }
+.ep-num-big.show { display: flex; }
 
 /* Status dot */
 .dot {
