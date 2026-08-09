@@ -214,31 +214,17 @@ class Pan115:
             return {"state": False, "error": str(e)}
 
     def _find_subfolder(self, parent_cid, name):
-        """在 parent_cid 下查找名为 name 的子目录（分页）。"""
-        offset = 0
-        limit = 200
-        while True:
-            try:
-                r = self.session.get(
-                    API_FILE_LIST,
-                    params={"cid": parent_cid, "offset": offset, "limit": limit, "show_dir": 1},
-                    timeout=10,
-                )
-                data = r.json()
-                if not isinstance(data, dict) or not data.get("state"):
-                    break
-                items = data.get("data", [])
-                if not items:
-                    break
-                for item in items:
-                    if item.get("n") == name and not bool(item.get("f", 0)):
-                        return item.get("cid", "")
-                count = data.get("count", 0)
-                offset += limit
-                if offset >= count:
-                    break
-            except Exception:
-                break
+        """在 parent_cid 下查找名为 name 的子目录（走 list_dir，自动带备用接口）。"""
+        try:
+            for item in self.list_dir(parent_cid):
+                if not item.get("is_dir"):
+                    continue
+                item_name = item.get("name", "")
+                if item_name == name or (name and _normalize_prefix(item_name) == _normalize_prefix(name)):
+                    return item.get("fid", "")
+        except Exception:
+            pass
+        return ""
         return None
 
     def _create_folder(self, parent_cid, name):
