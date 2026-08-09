@@ -499,11 +499,14 @@ async function addFolder() {
       pollTask(result.task_id)
     } else {
       taskProgress.finish()
-      if (result.item) {
-        resources.value.unshift(result.item)
+      const added = result.items?.length ? result.items : (result.item ? [result.item] : [])
+      for (const item of added) {
+        if (!resources.value.some(r => r.id === item.id)) resources.value.unshift(item)
+      }
+      if (added.length) {
         cache.write(resources.value)
       }
-      toast('已加入资源库', 'success')
+      toast(added.length > 1 ? `已加入 ${added.length} 个资源` : '已加入资源库', 'success')
     }
   } catch (error: any) {
     taskProgress.finish()
@@ -524,13 +527,16 @@ function pollTask(taskId: string) {
           taskProgress.fail(task.error)
           toast(task.error, 'error')
         } else {
-          if (task.result?.item) {
-            resources.value.unshift(task.result.item)
+          const added = task.result?.items?.length ? task.result.items : (task.result?.item ? [task.result.item] : [])
+          for (const item of added) {
+            if (!resources.value.some(r => r.id === item.id)) resources.value.unshift(item)
+          }
+          if (added.length) {
             cache.write(resources.value)
           }
           await load()
           taskProgress.update('全部完成，正在刷新', task.current || 0, task.total || 0)
-          toast('已加入资源库', 'success')
+          toast(added.length > 1 ? `已加入 ${added.length} 个资源` : '已加入资源库', 'success')
           window.setTimeout(() => taskProgress.finish(), 1200)
         }
       }

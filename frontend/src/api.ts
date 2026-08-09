@@ -66,7 +66,7 @@ const serverApi = {
   addResourceFolder: (payload: {
     path_115: string; title?: string; tmdb_id?: number | null; media_type?: string;
     poster_url?: string; overview?: string; total_episodes?: number
-  }) => request<{ ok: boolean; task_id?: string; item?: Resource; sync?: ResourceSyncResult; index_truncated?: boolean; error?: string }>(
+  }) => request<{ ok: boolean; task_id?: string; item?: Resource; items?: Resource[]; sync?: ResourceSyncResult; index_truncated?: boolean; error?: string }>(
     '/api/resources/folder', 'POST', payload),
   getTaskStatus: (taskId: string) => request<TaskStatus>(`/api/tasks/${encodeURIComponent(taskId)}`),
   syncResource: (id: number) => request<{ ok: boolean; item: Resource; stats: ResourceSyncResult }>(`/api/resources/${id}/sync`, 'POST'),

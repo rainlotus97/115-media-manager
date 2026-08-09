@@ -817,7 +817,7 @@ export const directApi = {
   async addResourceFolder(payload: {
     path_115: string; title?: string; tmdb_id?: number | null; media_type?: string;
     poster_url?: string; overview?: string; total_episodes?: number
-  }): Promise<{ ok: boolean; task_id?: string; item: Resource; sync?: ResourceSyncResult; index_truncated?: boolean; error?: string }> {
+  }): Promise<{ ok: boolean; task_id?: string; item: Resource; items?: Resource[]; sync?: ResourceSyncResult; index_truncated?: boolean; error?: string }> {
     const cid = await findCidByPath(payload.path_115)
     if (!cid) throw new Error('在 115 网盘中找不到该目录，请先确认路径')
     const title = payload.title?.trim() || payload.path_115.split('/').filter(Boolean).pop() || payload.path_115
@@ -839,7 +839,8 @@ export const directApi = {
     const items = await readResources()
     await writeResources([...items, item])
     const sync = await syncResourceItem(id)
-    return { ok: true, item: sync.item || item, sync: sync.stats, index_truncated: truncated }
+    const finalItem = sync.item || item
+    return { ok: true, item: finalItem, items: [finalItem], sync: sync.stats, index_truncated: truncated }
   },
   async syncResource(id: number): Promise<{ ok: boolean; item: Resource; stats: ResourceSyncResult }> {
     const result = await syncResourceItem(id)

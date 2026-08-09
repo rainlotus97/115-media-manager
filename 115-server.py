@@ -43,6 +43,7 @@ import requests as req_lib
 SCRIPT_DIR = Path(__file__).parent
 CONFIG_FILE = SCRIPT_DIR / "115-config.json"
 FRONTEND_DIST = SCRIPT_DIR / "frontend" / "dist"
+QR_LOGINS_FILE = SCRIPT_DIR / "115-qr-logins.json"
 
 # 115 API 端点
 API_SHARE_SNAP = "https://115cdn.com/webapi/share/snap"
@@ -74,12 +75,38 @@ background_tasks = {}
 background_tasks_lock = threading.Lock()
 
 
+def _load_qr_logins():
+    """服务重启后恢复未过期的二维码会话，避免扫码进行到一半被打断。"""
+    global qr_logins
+    try:
+        if QR_LOGINS_FILE.exists():
+            with open(QR_LOGINS_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            cutoff = time.time() - QR_LOGIN_TTL_SECONDS
+            qr_logins = {k: v for k, v in data.items()
+                         if v.get("created_at", 0) > cutoff and v.get("token")}
+    except Exception:
+        pass
+
+
+def _save_qr_logins():
+    try:
+        with open(QR_LOGINS_FILE, "w", encoding="utf-8") as f:
+            json.dump(qr_logins, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+_load_qr_logins()
+
+
 # ============================================================
 #  115 API 封装
 # ============================================================
 class Pan115:
     def __init__(self, cookie_str=""):
         self.session = req_lib.Session()
+        self._list_dir_error = None
         self.session.headers.update({
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                           "AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36",
@@ -271,6 +298,7 @@ class Pan115:
         offset = 0
         page_size = min(limit, 200)
         fallback = False
+        self._list_dir_error = None
         while True:
             try:
                 r = self.session.get(
@@ -316,6 +344,7 @@ class Pan115:
                 time.sleep(0.3)
             except Exception:
                 fallback = True
+                self._list_dir_error = "115 webapi 目录接口不可用，正在尝试备用接口"
                 break
         if fallback:
             # webapi 被风控时退回 115 App 端接口，接口字段不同（fn/fs/fc/fid）
@@ -355,6 +384,7 @@ class Pan115:
                         break
                     time.sleep(0.3)
                 except Exception:
+                    self._list_dir_error = "115 目录接口暂时不可用，请稍后重试或重新扫码授权"
                     break
         return all_files
 
@@ -374,6 +404,45 @@ class Pan115:
                 progress(len(files))
             time.sleep(SCAN_REQUEST_DELAY)
         return files, bool(pending)
+
+    def walk_tree(self, cid, max_folders=2000, max_files=50000, progress=None):
+        """递归扫描目录树，返回 (folders, files, truncated)。
+        folders: [{fid, name, path}]，path 为相对选中根目录的路径；
+        files:   [{fid, name, size, path, folder_fid}]，path 为所在文件夹路径。
+        """
+        folders = []
+        files = []
+        pending = [(cid, "")]
+        truncated = False
+        while pending and len(folders) < max_folders and len(files) < max_files:
+            current, path = pending.pop(0)
+            try:
+                items = self.list_dir(current)
+            except Exception:
+                truncated = True
+                break
+            for item in items:
+                if len(files) >= max_files or len(folders) >= max_folders:
+                    truncated = True
+                    break
+                if item["is_dir"]:
+                    child_path = f"{path}/{item['name']}".strip("/")
+                    folders.append({"fid": item["fid"], "name": item["name"], "path": child_path})
+                    pending.append((item["fid"], child_path))
+                else:
+                    files.append({
+                        "fid": item["fid"],
+                        "name": item["name"],
+                        "size": int(item.get("size") or 0),
+                        "path": path,
+                        "folder_fid": current,
+                    })
+            if progress:
+                progress(len(files))
+            time.sleep(SCAN_REQUEST_DELAY)
+        if pending:
+            truncated = True
+        return folders, files, truncated
 
     def add_cloud_download(self, url, target_cid="0"):
         """添加离线下载任务（115闪推兼容方式）。
@@ -765,6 +834,64 @@ def _receive_record_matches(rec, files, target_title):
     return False
 
 
+_SEASON_DIR_RE = re.compile(
+    r"^(?:season\s*\.?\s*\d+|s\d{1,2}\s*$|第\s*\d{1,2}\s*季|\d{1,2}$)",
+    re.IGNORECASE,
+)
+
+
+def _detect_resource_folders(root_cid, root_name, folders, files):
+    """自动识别“资源”层级：直接包含集数文件的文件夹才是一项。
+    例如 资源库/动漫/斗罗大陆/xxx.S01E01.mp4 → 斗罗大陆；
+    斗罗大陆/xxx/xxx.mp4 与 斗罗大陆/xxx.mp4 混合时仍归并为 斗罗大陆。
+    Season 1 / S01 / 第1季 等季目录会向上归并到最近的非季目录。
+    """
+    direct_eps = Counter()
+    for f in files:
+        if sync.parse_episode(f.get("name", "")):
+            direct_eps[f.get("path", "")] += 1
+
+    def parent_path(p):
+        return p.rpartition("/")[0] if "/" in p else ""
+
+    resources = {}
+    for p in direct_eps:
+        if direct_eps[p] <= 0:
+            continue
+        cur = p
+        while parent_path(cur) and direct_eps.get(parent_path(cur), 0) > 0:
+            cur = parent_path(cur)
+        resources[cur] = True
+
+    folder_by_path = {f["path"]: f for f in folders}
+
+    def is_seasonish(p):
+        name = root_name if p == "" else p.rpartition("/")[2]
+        return bool(_SEASON_DIR_RE.match((name or "").strip()))
+
+    changed = True
+    while changed:
+        changed = False
+        for p in list(resources):
+            if p and is_seasonish(p):
+                resources.pop(p, None)
+                parent = parent_path(p)
+                if parent:
+                    resources[parent] = True
+                changed = True
+
+    result = []
+    for p in resources:
+        if p == "":
+            result.append({"fid": root_cid, "name": root_name or "根目录", "path": ""})
+        else:
+            info = folder_by_path.get(p)
+            if info:
+                result.append({"fid": info["fid"], "name": info["name"], "path": info["path"]})
+    result.sort(key=lambda r: r["path"])
+    return result
+
+
 def _log_receive(share_code, cid, file_ids, endpoint, result):
     """把转存请求与 115 原文响应写入本地日志，便于排查。"""
     try:
@@ -859,6 +986,8 @@ def api_pan_dir():
         return jsonify({"ok": False, "error": "115 授权已失效，请重新登录"}), 401
     cid = request.args.get("cid", "0") or "0"
     items = pan.list_dir(cid)
+    if not items and pan._list_dir_error:
+        return jsonify({"ok": False, "error": pan._list_dir_error}), 502
     return jsonify({"ok": True, "items": items, "cid": cid})
 
 
@@ -935,6 +1064,7 @@ def api_pan_qrcode():
             image.raise_for_status()
             with qr_login_lock:
                 qr_logins[uid] = {"created_at": time.time(), "token": token, "base": base}
+            _save_qr_logins()
             return jsonify({
                 "ok": True,
                 "uid": uid,
@@ -955,6 +1085,7 @@ def api_pan_qrcode_status(uid):
     if request.method == "DELETE":
         with qr_login_lock:
             qr_logins.pop(uid, None)
+        _save_qr_logins()
         return jsonify({"ok": True})
     try:
         base = entry.get("base", QRCODE_BASES[0])
@@ -979,6 +1110,7 @@ def api_pan_qrcode_status(uid):
         _save_pan_session(cookie)
         with qr_login_lock:
             qr_logins.pop(uid, None)
+        _save_qr_logins()
         return jsonify({"ok": True, "status": "authorized"})
     except Exception as exc:
         # 轮询阶段的瞬时失败不应让整页 502；前端会继续等待下一次轮询。
@@ -1246,28 +1378,52 @@ def _run_add_folder(task_id, data):
         media_type = (data.get("media_type") or "tv").strip()
 
         _update_task(task_id, stage="正在扫描目录", total=0, current=0)
-        files, truncated = pan.list_tree_files(
+        folders, files, truncated = pan.walk_tree(
             cid, progress=lambda n: _update_task(task_id, current=n))
-        _update_task(task_id, stage="正在建立索引", current=len(files), total=len(files))
-        resource_id = _store_resource(
-            title, path_115, cid, files,
-            tmdb_id=tmdb_id,
-            media_type=media_type,
-            poster_url=(data.get("poster_url") or "").strip(),
-            overview=(data.get("overview") or "").strip(),
-            total_episodes=int(data.get("total_episodes") or 0),
-        )
-        _update_task(task_id, stage="正在同步集数与 TMDB", total=0, current=0)
-        sync_result = sync.sync_resource_item(
-            resource_id, pan, progress=lambda n: _update_task(task_id, current=n, total=n))
-        conn = database.get_db()
-        try:
-            row = conn.execute("SELECT * FROM resources WHERE id = ?", (resource_id,)).fetchone()
-            item = dict(row) if row else None
-        finally:
-            conn.close()
+        root_name = path_115.rstrip("/").split("/")[-1]
+        resources = _detect_resource_folders(cid, root_name, folders, files)
+        if not resources:
+            resources = [{"fid": cid, "name": root_name, "path": ""}]
+        # 自动拆成多个资源时，不自动套用同一个 TMDB 关联
+        use_tmdb = (len(resources) == 1)
+        items = []
+        sync_result = {}
+        total_res = len(resources)
+        for idx, info in enumerate(resources):
+            _update_task(task_id, stage=f"正在建立索引 {idx + 1}/{total_res}：{info['name']}",
+                         current=idx + 1, total=total_res)
+            if info["fid"] == cid:
+                res_path = path_115
+                res_files = files
+            else:
+                res_path = f"{path_115.rstrip('/')}/{info['path']}"
+                prefix = info["path"]
+                res_files = [f for f in files
+                             if f["path"] == prefix or f["path"].startswith(prefix + "/")]
+            resource_id = _store_resource(
+                info["name"], res_path, info["fid"], res_files,
+                tmdb_id=(tmdb_id if use_tmdb else None),
+                media_type=media_type,
+                poster_url=(data.get("poster_url") or "").strip() if use_tmdb else "",
+                overview=(data.get("overview") or "").strip() if use_tmdb else "",
+                total_episodes=int(data.get("total_episodes") or 0) if use_tmdb else 0,
+                parse_episodes=True,
+            )
+            _update_task(task_id, stage=f"正在同步集数 {idx + 1}/{total_res}：{info['name']}",
+                         current=idx + 1, total=total_res)
+            sync_result = sync.sync_resource_item(
+                resource_id, pan, progress=lambda n: _update_task(task_id, current=n, total=n))
+            conn = database.get_db()
+            try:
+                row = conn.execute("SELECT * FROM resources WHERE id = ?", (resource_id,)).fetchone()
+                item = dict(row) if row else None
+            finally:
+                conn.close()
+            if item:
+                items.append(item)
         _update_task(task_id, done=True, result={
-            "item": item,
+            "items": items,
+            "item": items[0] if items else None,
             "sync": sync_result,
             "index_truncated": truncated,
         })

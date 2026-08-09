@@ -198,6 +198,7 @@ export interface TaskStatus {
   error?: string | null
   result?: {
     item?: Resource
+    items?: Resource[]
     sync?: ResourceSyncResult
     index_truncated?: boolean
     renamed?: number

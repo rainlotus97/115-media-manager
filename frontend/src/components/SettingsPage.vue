@@ -101,7 +101,9 @@ function startPolling() {
       } else if (state.status === 'confirmed') {
         qrStatus.value = '已确认，正在获取授权'
       } else if (state.status === 'expired' || state.status === 'canceled') {
-        stopPolling(); clearQrState(); qrLoading.value = false; qrStatus.value = '二维码已失效，请重新生成'
+        stopPolling(); clearQrState(); qrLoading.value = false; qrStatus.value = '二维码已失效，正在自动重新生成…'
+        // 自动重新生成二维码，避免服务重启/会话过期后卡在“已失效”重试打不开
+        setTimeout(() => { if (!qrUid.value) startQrLogin(true) }, 600)
       } else if (state.error) {
         qrStatus.value = state.error
       }
