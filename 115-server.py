@@ -1395,6 +1395,8 @@ def _run_add_folder(task_id, data):
         _update_task(task_id, stage="正在扫描目录", total=0, current=0)
         folders, files, truncated = pan.walk_tree(
             cid, progress=lambda n: _update_task(task_id, current=n))
+        if not files and pan._list_dir_error:
+            raise RuntimeError(pan._list_dir_error)
         root_name = path_115.rstrip("/").split("/")[-1]
         resources = _detect_resource_folders(cid, root_name, folders, files)
         if not resources:
