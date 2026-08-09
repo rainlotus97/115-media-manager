@@ -1,0 +1,11 @@
+{
+  "name": "115-media-manager",
+  "private": true,
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "build": "cd frontend && pnpm build",
+    "start": "python3 115-server.py",
+    "build:ios": "cd frontend && pnpm build:ios"
+  }
+}

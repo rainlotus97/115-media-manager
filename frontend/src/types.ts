@@ -1,83 +1,4 @@
-// ---- API Response Types ----
-
-export interface CheckCookieResponse {
-  ok: boolean
-  error?: string
-}
-
-export interface CookieStatusResponse {
-  ok: boolean
-  has_cookie?: boolean
-}
-
-export interface CookieSaveResponse {
-  ok: boolean
-  error?: string
-}
-
-export interface FileItem {
-  name: string
-  is_dir: boolean
-  size: number
-}
-
-export interface ShareInfoResponse {
-  ok: boolean
-  share_code?: string
-  title?: string
-  file_count?: number
-  size?: number
-  size_str?: string
-  files?: FileItem[]
-  file_id_map?: Record<string, string>
-  browse_cid?: string
-  is_expired?: boolean
-  user_name?: string
-  error?: string
-  hint?: string
-}
-
-export interface SaveResponse {
-  ok: boolean
-  target_path?: string
-  error?: string
-}
-
-// ---- Request Payloads ----
-
-export interface ShareInfoRequest {
-  url?: string
-  password?: string
-  cid?: string
-}
-
-export interface SaveRequest {
-  url: string
-  password: string
-  target_path: string
-  file_ids?: string
-}
-
-// ---- Auth Types ----
-
-export interface AuthResponse {
-  ok: boolean
-  token?: string
-  user?: UserInfo
-  error?: string
-}
-
-export interface UserInfo {
-  id: number
-  username: string
-}
-
-// ---- Internal State Types ----
-
-export interface Breadcrumb {
-  name: string
-  cid: string
-}
+export type ActivePage = 'library' | 'import' | 'cloud-download' | 'settings'
 
 export type ToastType = 'success' | 'error' | 'info'
 
@@ -87,153 +8,202 @@ export interface Toast {
   type: ToastType
 }
 
-// ---- UI State ----
+export interface PanSession {
+  ok: boolean
+  cached?: boolean
+  error?: string
+  requires_verification?: boolean
+  verification_url?: string
+}
 
-export type ActivePage =
-  | 'dashboard'
-  | 'anime'
-  | 'movies'
-  | 'tv'
-  | 'share-link'
-  | 'cloud-download'
-  | 'direct-link'
-  | 'settings'
+export interface Resource {
+  id: number
+  title: string
+  match_key: string
+  path_115: string
+  folder_id_115: string | null
+  tmdb_id: number | null
+  media_type: string
+  poster_url: string
+  overview: string
+  total_episodes: number
+  cached_episodes: number
+  latest_episode: number
+  seasons_json: string
+  replace_rules_json?: string
+  file_count: number
+  total_size: number
+  last_synced_at: string
+  created_at: string
+  updated_at: string
+}
 
-// ---- TMDB Types ----
+export interface ResourceFile {
+  id?: number
+  fid: string
+  name: string
+  filename?: string
+  size: number
+  file_size?: number
+  is_dir?: boolean
+  display_name?: string
+  season_number?: number | null
+  episode_number?: number | null
+  tmdb_valid?: number
+}
 
-export interface TMDBSearchItem {
+export interface ResourceDetail {
+  ok: boolean
+  item: Resource
+  files: ResourceFile[]
+}
+
+export interface ImportMatch {
+  resource_id: number
+  title: string
+  path_115: string
+  matched_file_ids: string[]
+}
+
+export interface ImportPreview {
+  ok: boolean
+  title: string
+  share_code: string
+  files: ResourceFile[]
+  matches: ImportMatch[]
+  error?: string
+}
+
+export interface ReceiveRecord {
+  id: string
+  name: string
+  parent_name: string
+  file_size: number
+  create_time: number
+  update_time?: number
+}
+
+export interface PanDirItem {
+  fid: string
+  name: string
+  size: number
+  is_dir: boolean
+}
+
+export interface PanDir {
+  ok: boolean
+  cid: string
+  items: PanDirItem[]
+  error?: string
+}
+
+export interface TmdbSearchItem {
   tmdb_id: number
   title: string
   original_title: string
   year: string
   overview: string
-  poster_url: string | null
-  backdrop_url: string | null
+  poster_url: string
+  backdrop_url: string
   media_type: string
   vote_average: number
 }
 
-export interface TMDBSearchResponse {
+export interface TmdbSearchResult {
   ok: boolean
-  items?: TMDBSearchItem[]
-  total_results?: number
-  page?: number
-  total_pages?: number
+  items: TmdbSearchItem[]
+  total_results: number
   error?: string
 }
 
-export interface TMDBSeason {
+export interface TmdbSeason {
   season_number: number
   name: string
   episode_count: number
   poster_path: string | null
 }
 
-export interface TMDBDetailResponse {
+export interface TmdbDetail {
   ok: boolean
-  tmdb_id?: number
-  title?: string
-  original_title?: string
-  year?: string
-  overview?: string
-  poster_url?: string | null
-  backdrop_url?: string | null
-  genres?: string[]
-  region?: string
-  vote_average?: number
-  total_episodes?: number
-  number_of_seasons?: number
-  seasons?: TMDBSeason[]
-  status?: string
-  error?: string
-}
-
-export interface TMDBSeriesEpisode {
-  episode_number: number
-  name: string
-  overview: string
-  still_url: string | null
-  air_date: string
-}
-
-export interface TMDBSeriesResponse {
-  ok: boolean
-  season_number?: number
-  name?: string
-  episodes?: TMDBSeriesEpisode[]
-  error?: string
-}
-
-export interface TMDBConfigResponse {
-  configured: boolean
-  enabled: boolean
-}
-
-// ---- Media / Watchlist Types ----
-
-export interface WatchlistItem {
-  id: number
-  user_id: number
-  tmdb_id: number | null
+  tmdb_id: number
+  media_type: string
   title: string
   original_title: string
-  media_type: 'anime' | 'movie' | 'tv'
-  region: string
-  genre: string
-  poster_path: string
-  backdrop_path: string
+  year: string
   overview: string
+  poster_url: string
+  backdrop_url: string
   total_episodes: number
-  cached_episodes: number
-  latest_episode: number
-  status: 'tracking' | 'completed' | 'paused'
-  path_115: string
-  folder_id_115: string
-  last_synced_at: string
-  next_sync_at: string
-  auto_sync_days: string
-  created_at: string
-  updated_at: string
-  cached_files?: CachedFile[]
+  number_of_seasons: number
+  seasons: TmdbSeason[]
+  status: string
+  error?: string
 }
 
-export interface CachedFile {
-  id: number
+export interface ResourceSyncResult {
+  ok: boolean
+  files: number
+  episodes_cached: number
+  total_episodes: number
+  seasons: number[]
+  seasons_json: string
+  truncated: boolean
+  error?: string
+}
+
+export interface QrLogin {
+  ok: boolean
+  uid?: string
+  qr_url?: string
+  expires_in?: number
+  error?: string
+}
+
+export interface QrLoginStatus {
+  ok: boolean
+  status: 'waiting' | 'scanned' | 'confirmed' | 'authorized' | 'expired' | 'canceled' | 'error'
+  error?: string
+}
+
+export interface DownloadTask {
+  task_id: string
+  name?: string
+  status: number
+  percent?: number
+  size?: string
+}
+
+export interface RenamePreviewItem {
   fid: string
-  filename: string
-  file_size: number
-  episode_number: number
-  season_number: number
+  name: string
+  new_name: string | null
+  current_prefix?: string | null
+  same_prefix?: boolean
+  no_episode?: boolean
+  will_rename: boolean
 }
 
-export interface WatchlistDetailResponse {
+export interface RenameTarget {
+  fid: string
+  old_name: string
+  new_name: string
+}
+
+export interface TaskStatus {
   ok: boolean
-  item?: WatchlistItem
-  error?: string
-}
-
-export interface WatchlistListResponse {
-  ok: boolean
-  items: WatchlistItem[]
-}
-
-export interface AddWatchlistRequest {
-  tmdb_id?: number
-  title: string
-  original_title?: string
-  media_type: string
-  region?: string
-  genres?: string[]
-  poster_url?: string
-  backdrop_url?: string
-  overview?: string
-  total_episodes?: number
-  status?: string
-  path_115?: string
-}
-
-export interface WatchlistMutationResponse {
-  ok: boolean
-  id?: number
-  error?: string
+  done: boolean
+  stage: string
+  current: number
+  total: number
+  error?: string | null
+  result?: {
+    item?: Resource
+    sync?: ResourceSyncResult
+    index_truncated?: boolean
+    renamed?: number
+    skipped?: number
+    skipped_samples?: string[]
+    errors?: string[]
+    synced?: number
+  } | null
 }

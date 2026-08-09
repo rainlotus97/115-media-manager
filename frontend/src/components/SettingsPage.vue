@@ -1,342 +1,154 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
-import { useAuth } from '../composables/useAuth'
-import { useCookie } from '../composables/useCookie'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { api, getGatewayUrl, setGatewayUrl, isNativePlatform } from '../api'
 import { useToast } from '../composables/useToast'
 
-const { user } = useAuth()
-const { cookieValid, check: checkCookie, save: saveCookie } = useCookie()
 const { show: toast } = useToast()
-
-import { api } from '../api'
-
-const cookieInput = ref('')
-const savingCookie = ref(false)
-
-// TMDB
-const tmdbConfigured = ref(false)
+const isNative = isNativePlatform
+const connected = ref<boolean | null>(null)
+const sessionCached = ref(false)
+const qrLoading = ref(false)
+const qrUrl = ref('')
+const qrUid = ref('')
+const qrStatus = ref('')
+const qrExpiresAt = ref(0)
+const gateway = ref(getGatewayUrl())
 const tmdbKey = ref('')
-const savingTmdb = ref(false)
+const tmdbConfigured = ref(false)
+const tmdbSaving = ref(false)
+const QR_STORAGE_KEY = 'pan115-active-qr'
+let qrTimer: number | undefined
 
-async function loadTmdbConfig() {
-  try { const r = await api.getTMDBConfig(); tmdbConfigured.value = r.configured } catch { /**/ }
+const hasActiveQr = computed(() => Boolean(qrUid.value && qrUrl.value && Date.now() < qrExpiresAt.value))
+
+function saveQrState() {
+  sessionStorage.setItem(QR_STORAGE_KEY, JSON.stringify({
+    uid: qrUid.value,
+    url: qrUrl.value,
+    expiresAt: qrExpiresAt.value,
+  }))
 }
-
-async function handleSaveTmdb() {
-  if (!tmdbKey.value.trim()) { toast('请输入 API Key', 'error'); return }
-  savingTmdb.value = true
+function restoreQrState() {
   try {
-    const res = await api.setTMDBConfig(tmdbKey.value.trim())
-    if (res.ok) { tmdbConfigured.value = true; tmdbKey.value = ''; toast('TMDB API Key 已保存', 'success') }
-    else toast('保存失败', 'error')
-  } catch { toast('请求失败', 'error') }
-  finally { savingTmdb.value = false }
+    const saved = JSON.parse(sessionStorage.getItem(QR_STORAGE_KEY) || 'null')
+    if (saved?.uid && saved?.url && saved.expiresAt > Date.now()) {
+      qrUid.value = saved.uid
+      qrUrl.value = saved.url
+      qrExpiresAt.value = saved.expiresAt
+      return true
+    }
+  } catch { /* ignore */ }
+  sessionStorage.removeItem(QR_STORAGE_KEY)
+  return false
+}
+function clearQrState() {
+  sessionStorage.removeItem(QR_STORAGE_KEY)
+  qrUid.value = ''
+  qrUrl.value = ''
+  qrExpiresAt.value = 0
 }
 
-// 设置 Tab
-const settingsTab = ref<'cookie' | 'tmdb' | 'account'>('cookie')
-
-onMounted(() => {
-  checkCookie()
-  loadTmdbConfig()
-})
-
-async function handleSaveCookie() {
-  const val = cookieInput.value.trim()
-  if (!val) {
-    toast('请粘贴 Cookie', 'error')
-    return
-  }
-
-  savingCookie.value = true
-  const res = await saveCookie(val)
-  savingCookie.value = false
-
-  if (res.ok) {
-    toast('Cookie 已保存并验证通过', 'success')
-    cookieInput.value = ''
-  } else {
-    toast(res.error || 'Cookie 无效', 'error')
-  }
+async function refresh() {
+  try {
+    const session = await api.getSession()
+    connected.value = session.ok
+    sessionCached.value = Boolean(session.cached)
+  } catch { connected.value = false; sessionCached.value = false }
 }
+async function saveGateway() {
+  setGatewayUrl(gateway.value)
+  await refresh()
+  toast(gateway.value.trim() ? '网关地址已保存' : '已使用当前网页地址', 'success')
+}
+async function refreshTmdb() {
+  try {
+    const config = await api.getTmdbConfig()
+    tmdbConfigured.value = config.configured
+  } catch { tmdbConfigured.value = false }
+}
+async function saveTmdb() {
+  if (!tmdbKey.value.trim()) { toast('请输入 TMDB API Key', 'error'); return }
+  tmdbSaving.value = true
+  try {
+    await api.setTmdbConfig(tmdbKey.value.trim())
+    tmdbKey.value = ''
+    tmdbConfigured.value = true
+    toast('TMDB API Key 已保存', 'success')
+  } catch (error: any) {
+    toast(error.message || '保存失败', 'error')
+  } finally { tmdbSaving.value = false }
+}
+async function logout() {
+  if (!confirm('退出 115 授权？本地资源索引不会删除。')) return
+  try { await api.logout(); connected.value = false; clearQrState(); toast('已退出 115 授权', 'success') } catch { toast('退出失败', 'error') }
+}
+
+function stopPolling() {
+  window.clearInterval(qrTimer)
+  qrTimer = undefined
+}
+function startPolling() {
+  stopPolling()
+  qrTimer = window.setInterval(async () => {
+    if (!qrUid.value) return
+    try {
+      const state = await api.getQrLoginStatus(qrUid.value)
+      if (state.status === 'authorized') {
+        stopPolling(); clearQrState(); qrLoading.value = false
+        await refresh(); toast('115 扫码授权成功', 'success')
+      } else if (state.status === 'scanned') {
+        qrStatus.value = '已扫码，请在 115 App 中确认'
+      } else if (state.status === 'confirmed') {
+        qrStatus.value = '已确认，正在获取授权'
+      } else if (state.status === 'expired' || state.status === 'canceled') {
+        stopPolling(); clearQrState(); qrLoading.value = false; qrStatus.value = '二维码已失效，请重新生成'
+      } else if (state.error) {
+        qrStatus.value = state.error
+      }
+    } catch { /* transient polling failure */ }
+  }, 1800)
+}
+async function startQrLogin(forceNew = false) {
+  if (forceNew) clearQrState()
+  if (!qrUrl.value && !restoreQrState()) {
+    qrLoading.value = true
+    qrStatus.value = ''
+    try {
+      const result = await api.createQrLogin()
+      if (!result.ok || !result.uid || !result.qr_url) throw new Error(result.error || '二维码生成失败')
+      qrUid.value = result.uid
+      qrUrl.value = result.qr_url
+      qrExpiresAt.value = Date.now() + (result.expires_in || 300) * 1000
+      saveQrState()
+    } catch (error: any) {
+      qrLoading.value = false
+      toast(error.message || '二维码生成失败', 'error')
+      return
+    }
+  }
+  qrLoading.value = false
+  qrStatus.value = '请使用 115 App 扫描屏幕上的二维码并确认'
+  startPolling()
+}
+function hideQr() {
+  // 只收起界面，不销毁服务端会话：5 分钟内重新打开仍可继续等待扫码。
+  stopPolling()
+  qrUrl.value = ''
+  qrStatus.value = '二维码已收起；扫码结果在有效期内仍然有效，可重新显示继续等待。'
+}
+
+onMounted(() => { refresh(); refreshTmdb() })
+onUnmounted(stopPolling)
 </script>
-
 <template>
-  <div class="settings-page">
-    <h1 class="page-title">设置</h1>
-
-    <!-- Sub Tabs -->
-    <div class="settings-tabs">
-      <button
-        :class="['sub-tab', { active: settingsTab === 'cookie' }]"
-        @click="settingsTab = 'cookie'"
-      >
-        115 网盘
-      </button>
-      <button
-        :class="['sub-tab', { active: settingsTab === 'tmdb' }]"
-        @click="settingsTab = 'tmdb'; loadTmdbConfig()"
-      >
-        TMDB
-      </button>
-      <button
-        :class="['sub-tab', { active: settingsTab === 'account' }]"
-        @click="settingsTab = 'account'"
-      >
-        账号
-      </button>
-    </div>
-
-    <!-- Cookie Settings -->
-    <div v-if="settingsTab === 'cookie'" class="settings-section">
-      <div class="setting-card">
-        <div class="setting-header">
-          <h3>115 Cookie 配置</h3>
-          <span
-            :class="[
-              'status-badge',
-              cookieValid === true ? 'valid' : cookieValid === false ? 'invalid' : 'unknown',
-            ]"
-          >
-            {{
-              cookieValid === true
-                ? '✅ 有效'
-                : cookieValid === false
-                  ? '❌ 无效'
-                  : '⏳ 未检测'
-            }}
-          </span>
-        </div>
-
-        <div class="cookie-hint">
-          <p>浏览器打开 115.com → F12 → Application → Cookies → 115.com → 复制全部 Cookie 值</p>
-        </div>
-
-        <div class="form-group">
-          <textarea
-            v-model="cookieInput"
-            rows="5"
-            placeholder="粘贴 Cookie... uid=xxx; cid=xxx; seid=xxx; kid=xxx;"
-            class="cookie-textarea"
-          ></textarea>
-        </div>
-
-        <button
-          class="btn btn-primary"
-          :disabled="savingCookie"
-          @click="handleSaveCookie"
-        >
-          <span v-if="savingCookie" class="spinner"></span>
-          <span v-else>💾 保存并验证</span>
-        </button>
-      </div>
-
-      <!-- Mobile Cookie Guide -->
-      <div class="setting-card">
-        <h3>移动端授权</h3>
-        <p class="hint-text">
-          手机端复制 Cookie 较不方便。你可以：
-        </p>
-        <ol class="guide-list">
-          <li>在 PC/平板浏览器登录 115.com 后复制 Cookie</li>
-          <li>通过剪贴板同步工具（如 iCloud 剪贴板）传到手机</li>
-          <li>粘贴到上方输入框保存</li>
-        </ol>
-        <div class="mobile-note">
-          💡 扫码授权功能将在后续版本中研究支持
-        </div>
-      </div>
-    </div>
-
-    <!-- TMDB Settings -->
-    <div v-if="settingsTab === 'tmdb'" class="settings-section">
-      <div class="setting-card">
-        <div class="setting-header">
-          <h3>TMDB API 配置</h3>
-          <span :class="['status-badge', tmdbConfigured ? 'valid' : 'unknown']">
-            {{ tmdbConfigured ? '✅ 已配置' : '⏳ 未配置' }}
-          </span>
-        </div>
-        <p class="hint-text" style="margin-bottom:12px">
-          用于获取电影/电视剧/动漫的元数据（海报、简介、集数等）。
-          免费注册获取 API Key：<a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org/settings/api</a>
-        </p>
-        <div class="form-group">
-          <input
-            v-model="tmdbKey"
-            type="text"
-            placeholder="粘贴 TMDB API Key (v3 auth)"
-          />
-        </div>
-        <button class="btn btn-primary" :disabled="savingTmdb" @click="handleSaveTmdb">
-          <span v-if="savingTmdb" class="spinner"></span>
-          <span v-else>💾 保存</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Account Settings -->
-    <div v-if="settingsTab === 'account'" class="settings-section">
-      <div class="setting-card">
-        <div class="account-info">
-          <div class="account-avatar">👤</div>
-          <div class="account-detail">
-            <div class="account-name">{{ user?.username }}</div>
-            <div class="account-id">ID: {{ user?.id }}</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+  <section class="settings-page"><header><p class="eyebrow">SETTINGS</p><h1>设置</h1><p>115 采用扫码授权，不需要手动复制 Cookie。</p></header>
+    <div v-if="!isNative" class="gateway-card"><h2>服务网关</h2><p>手机、平板与电脑使用同一页面；若部署在服务器，请填写 HTTPS 地址，例如 <code>https://pan.example.com</code>。</p><div><input v-model="gateway" type="url" placeholder="https://pan.example.com" /><button class="btn btn-ghost" @click="saveGateway">保存地址</button></div></div>
+    <div class="status-card"><span class="status-dot" :class="{ on: connected }" /><div><b>{{ connected === null ? '正在检查授权' : connected ? '115 已连接' : '需要重新授权' }}</b><p>{{ connected ? (sessionCached ? '已复用本地授权缓存，尚未过期。' : '授权已验证，资源导入和云下载可以正常使用。') : '请登录 115 以继续使用资源管理能力。' }}</p></div><button v-if="connected" class="btn btn-ghost" @click="logout">退出授权</button></div>
+    <div v-if="!connected" class="login-card"><h2>扫码授权登录</h2><p>用 115 App 扫描屏幕上的二维码并确认。取消只会收起二维码，不会影响扫码结果。</p><div v-if="qrUrl" class="qr-login"><img :src="qrUrl" alt="115 登录二维码" /><strong>{{ qrStatus }}</strong><div class="qr-actions"><button class="btn btn-ghost" @click="hideQr">收起二维码</button><button class="btn btn-primary" @click="startQrLogin(true)">重新生成</button></div></div><div v-else class="qr-start"><button class="btn btn-primary" :disabled="qrLoading" @click="startQrLogin()"><span v-if="qrLoading" class="spinner" /><span v-else>{{ hasActiveQr ? '重新显示二维码' : '生成登录二维码' }}</span></button><p v-if="qrStatus">{{ qrStatus }}</p></div></div>
+    <div class="gateway-card"><h2>TMDB</h2><p>{{ tmdbConfigured ? '已配置 TMDB API Key，可以搜索并对比剧集总集数。' : '未配置 TMDB API Key，搜索剧集和集数对比不可用。' }}</p><div><input v-model="tmdbKey" type="password" placeholder="TMDB API Key（v3 auth）" autocomplete="off" /><button class="btn btn-ghost" :disabled="tmdbSaving" @click="saveTmdb"><span v-if="tmdbSaving" class="spinner" /><span v-else>保存 Key</span></button></div></div>
+    <div class="privacy"><h2>本地数据</h2><p>资源名称、文件索引和 115 目录映射持久化在当前设备。移除资源只会移除索引，不会删除 115 云端文件。</p></div>
+  </section>
 </template>
-
 <style scoped>
-.settings-page {
-  max-width: 640px;
-}
-
-.page-title {
-  font-size: 24px;
-  font-weight: 700;
-  margin-bottom: 24px;
-}
-
-.settings-tabs {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 24px;
-  background: var(--bg-card);
-  border-radius: var(--radius);
-  padding: 4px;
-}
-
-.sub-tab {
-  flex: 1;
-  padding: 10px 16px;
-  text-align: center;
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--text-secondary);
-  cursor: pointer;
-  transition: all var(--transition);
-}
-
-.sub-tab.active {
-  background: var(--accent);
-  color: #fff;
-}
-
-.sub-tab:not(.active):hover {
-  background: var(--bg-card-hover);
-}
-
-.settings-section {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.setting-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: 24px;
-}
-
-.setting-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-}
-
-.setting-card h3 {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.status-badge {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 4px 10px;
-  border-radius: 20px;
-}
-
-.status-badge.valid {
-  background: rgba(52, 199, 89, 0.15);
-  color: var(--success);
-}
-
-.status-badge.invalid {
-  background: rgba(255, 69, 58, 0.15);
-  color: var(--danger);
-}
-
-.status-badge.unknown {
-  background: rgba(142, 142, 154, 0.15);
-  color: var(--text-muted);
-}
-
-.cookie-hint {
-  font-size: 12px;
-  color: var(--text-muted);
-  margin-bottom: 14px;
-  line-height: 1.5;
-}
-
-.cookie-textarea {
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  font-size: 12px !important;
-  line-height: 1.4;
-}
-
-.form-group {
-  margin-bottom: 14px;
-}
-
-.hint-text {
-  font-size: 13px;
-  color: var(--text-secondary);
-  margin-bottom: 10px;
-}
-
-.guide-list {
-  font-size: 13px;
-  color: var(--text-secondary);
-  padding-left: 18px;
-  line-height: 2;
-}
-
-.mobile-note {
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: rgba(91, 127, 255, 0.1);
-  border-radius: var(--radius-sm);
-  font-size: 12px;
-  color: var(--accent);
-}
-
-.account-info {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.account-avatar {
-  font-size: 48px;
-}
-
-.account-name {
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.account-id {
-  font-size: 13px;
-  color: var(--text-muted);
-  margin-top: 2px;
-}
+.settings-page{max-width:680px;margin:0 auto}.eyebrow{font-size:11px;font-weight:700;color:var(--accent);margin:0 0 7px}h1{font-size:28px;margin:0 0 8px}header>p:last-child{margin:0;color:var(--text-secondary);font-size:14px}.gateway-card,.status-card,.login-card,.privacy{margin-top:24px;padding:20px;background:var(--bg-card);border:1px solid var(--border);border-radius:7px}.gateway-card h2{font-size:16px;margin:0}.gateway-card p{color:var(--text-secondary);font-size:13px;line-height:1.5}.gateway-card div{display:flex;gap:10px}.gateway-card input{flex:1}.status-card{display:flex;align-items:center;gap:12px}.status-card div{flex:1}.status-card b{font-size:14px}.status-card p,.login-card>p,.privacy p,.qr-start p{font-size:13px;color:var(--text-secondary);margin:5px 0 0}.status-dot{width:9px;height:9px;border-radius:50%;background:var(--danger)}.status-dot.on{background:var(--success)}.login-card{display:grid;gap:15px}.login-card h2,.privacy h2{font-size:16px;margin:0}.login-card>p{margin-top:-8px}.login-card .btn{justify-self:start}.privacy{margin-top:12px}.privacy p{line-height:1.6}.qr-start{display:grid;gap:10px;justify-items:start}.qr-start .btn{min-width:150px}.qr-login{display:grid;justify-items:center;gap:10px}.qr-login img{width:220px;height:220px;image-rendering:auto;background:#fff;padding:8px;border-radius:6px}.qr-login strong{font-size:13px;color:var(--text-secondary)}.qr-actions{display:flex;gap:10px}.qr-actions .btn{min-width:112px}@media(max-width:520px){.gateway-card div{display:grid}.gateway-card .btn{width:100%}.status-card{align-items:start;flex-wrap:wrap}.status-card .btn{width:100%;margin-top:4px}.login-card .btn{width:100%}.qr-start .btn,.qr-actions{width:100%}.qr-actions .btn{width:100%}}
 </style>

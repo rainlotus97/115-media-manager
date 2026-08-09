@@ -1,133 +1,62 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useAuth } from '../composables/useAuth'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import Sidebar from './Sidebar.vue'
 import BottomTabBar from './BottomTabBar.vue'
-import Dashboard from './Dashboard.vue'
-import MediaList from './MediaList.vue'
+import ResourceLibrary from './ResourceLibrary.vue'
+import ImportPage from './ImportPage.vue'
 import CloudDownload from './CloudDownload.vue'
-import ShareLinkTool from './ShareLinkTool.vue'
 import SettingsPage from './SettingsPage.vue'
 import type { ActivePage } from '../types'
 
-const { user, logout } = useAuth()
+const validPages: ActivePage[] = ['library', 'import', 'cloud-download', 'settings']
+const activePage = ref<ActivePage>(pageFromHash())
+const compact = ref(window.innerWidth < 1024)
+const mobile = ref(window.innerWidth < 768)
+const refreshKey = ref(0)
 
-const activePage = ref<ActivePage>('dashboard')
-const sidebarCollapsed = ref(false)
-const sharePresetPath = ref('')
-const mediaFilterStatus = ref<string>('')
-
-function goShareLink(path: string) {
-  sharePresetPath.value = path
-  activePage.value = 'share-link'
+function resize() {
+  compact.value = window.innerWidth < 1024
+  mobile.value = window.innerWidth < 768
+}
+function pageFromHash(): ActivePage {
+  const hash = window.location.hash.replace(/^#\/?/, '') as ActivePage
+  return validPages.includes(hash) ? hash : 'library'
 }
 
-function handleDashboardNav(page: ActivePage, status?: string) {
-  mediaFilterStatus.value = status || ''
+onMounted(() => window.addEventListener('resize', resize))
+onUnmounted(() => window.removeEventListener('resize', resize))
+window.addEventListener('hashchange', () => { activePage.value = pageFromHash() })
+
+const showSidebar = computed(() => !mobile.value)
+function navigate(page: ActivePage) {
   activePage.value = page
+  if (window.location.hash !== `#/${page}`) window.location.hash = `/${page}`
 }
-
-const isMobile = computed(() => window.innerWidth < 768)
-const showSidebar = computed(() => !isMobile.value)
-
-// Listen for resize
-window.addEventListener('resize', () => {
-  // reactive update via computed
-})
-
-function getMediaType(page: ActivePage): 'anime' | 'movie' | 'tv' | null {
-  if (page === 'anime') return 'anime'
-  if (page === 'movies') return 'movie'
-  if (page === 'tv') return 'tv'
-  return null
-}
-
-const currentMediaType = computed(() => getMediaType(activePage.value))
+function imported() { refreshKey.value++; activePage.value = 'library' }
 </script>
 
 <template>
-  <div class="app-shell" :class="{ 'sidebar-collapsed': sidebarCollapsed }">
-    <Sidebar
-      v-if="showSidebar"
-      :collapsed="sidebarCollapsed"
-      :active-page="activePage"
-      :username="user?.username || ''"
-      @navigate="(p: ActivePage) => activePage = p"
-      @toggle-collapse="sidebarCollapsed = !sidebarCollapsed"
-      @logout="logout"
-    />
-
+  <div class="app-shell" :class="{ compact }">
+    <Sidebar v-if="showSidebar" :compact="compact" :active-page="activePage" @navigate="navigate" />
     <main class="main-content">
-      <Dashboard v-if="activePage === 'dashboard'" @navigate="handleDashboardNav" />
-      <MediaList
-        v-else-if="currentMediaType"
-        :media-type="currentMediaType"
-        :initial-status="mediaFilterStatus"
-        @navigate-share="goShareLink"
-      />
-      <CloudDownload v-else-if="activePage === 'cloud-download'" />
-      <ShareLinkTool v-else-if="activePage === 'share-link'" :preset-path="sharePresetPath" />
-      <SettingsPage v-else-if="activePage === 'settings'" />
-      <div v-else class="placeholder-page">
-        <h2>此功能即将上线</h2>
-        <p>直链获取功能正在开发中...</p>
-      </div>
+      <ResourceLibrary v-show="activePage === 'library'" :key="refreshKey" @import="navigate('import')" />
+      <ImportPage v-show="activePage === 'import'" @imported="imported" />
+      <CloudDownload v-show="activePage === 'cloud-download'" />
+      <SettingsPage v-show="activePage === 'settings'" />
     </main>
-
-    <BottomTabBar
-      v-if="isMobile"
-      :active-page="activePage"
-      @navigate="(p: ActivePage) => activePage = p"
-    />
+    <BottomTabBar v-if="mobile" :active-page="activePage" @navigate="navigate" />
   </div>
 </template>
 
 <style scoped>
-.app-shell {
-  display: flex;
-  min-height: 100vh;
-  background: var(--bg-primary);
-}
-
-.main-content {
-  flex: 1;
-  margin-left: 240px;
-  padding: 32px;
-  min-height: 100vh;
-  transition: margin-left var(--transition);
-}
-
-.sidebar-collapsed .main-content {
-  margin-left: 72px;
-}
-
-.placeholder-page {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  height: calc(100vh - 64px);
-  color: var(--text-muted);
-  text-align: center;
-}
-
-.placeholder-page h2 {
-  font-size: 20px;
-  margin-bottom: 8px;
-  color: var(--text-secondary);
-}
-
-@media (max-width: 1024px) {
-  .main-content {
-    margin-left: 72px !important;
-  }
-}
-
-@media (max-width: 768px) {
-  .main-content {
-    margin-left: 0 !important;
-    padding: 16px;
-    padding-bottom: 80px;
+.app-shell { min-height: 100vh; background: var(--bg-primary); }
+.main-content { margin-left: 236px; min-height: 100vh; padding: 28px 32px 48px; }
+.compact .main-content { margin-left: 72px; }
+@media (max-width: 767px) {
+  .main-content,
+  .compact .main-content {
+    margin-left: 0;
+    padding: 18px 16px calc(92px + env(safe-area-inset-bottom));
   }
 }
 </style>

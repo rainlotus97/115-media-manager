@@ -7,7 +7,10 @@ __pycache__/
 115-media.db-*
 115-config.json
 frontend/node_modules/
+node_modules/
 frontend/dist/
+frontend/ios-build/
+.venv/
 .DS_Store
 *.log
 /tmp/

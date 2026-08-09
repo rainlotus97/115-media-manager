@@ -102,6 +102,51 @@ CREATE TABLE IF NOT EXISTS tmdb_episode_cache (
     cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (tmdb_id, season_number, episode_number)
 );
+
+-- Single-user resource index.  This is deliberately independent from the
+-- legacy watchlist tables so an upgrade never mutates a user's 115 files.
+CREATE TABLE IF NOT EXISTS resources (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    title TEXT NOT NULL,
+    match_key TEXT NOT NULL,
+    path_115 TEXT NOT NULL,
+    folder_id_115 TEXT,
+    tmdb_id INTEGER,
+    media_type TEXT DEFAULT 'tv',
+    poster_url TEXT,
+    overview TEXT,
+    total_episodes INTEGER DEFAULT 0,
+    cached_episodes INTEGER DEFAULT 0,
+    latest_episode INTEGER DEFAULT 0,
+    seasons_json TEXT DEFAULT '[]',
+    replace_rules_json TEXT DEFAULT '[]',
+    file_count INTEGER DEFAULT 0,
+    total_size INTEGER DEFAULT 0,
+    last_synced_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS resource_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    resource_id INTEGER NOT NULL REFERENCES resources(id) ON DELETE CASCADE,
+    fid TEXT,
+    filename TEXT NOT NULL,
+    file_size INTEGER NOT NULL DEFAULT 0,
+    match_key TEXT,
+    season_number INTEGER,
+    episode_number INTEGER,
+    display_name TEXT,
+    tmdb_valid INTEGER DEFAULT 1,
+    cached_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(resource_id, filename, file_size)
+);
+
+CREATE INDEX IF NOT EXISTS idx_resource_files_match
+ON resource_files(filename, file_size);
+
+CREATE INDEX IF NOT EXISTS idx_resources_match_key
+ON resources(match_key);
 """
 
 
@@ -117,6 +162,19 @@ def get_db():
 MIGRATIONS = [
     "ALTER TABLE media_file_cache ADD COLUMN season_number INTEGER DEFAULT 1",
     "ALTER TABLE watchlist ADD COLUMN latest_episode INTEGER DEFAULT 0",
+    "ALTER TABLE resources ADD COLUMN tmdb_id INTEGER",
+    "ALTER TABLE resources ADD COLUMN media_type TEXT DEFAULT 'tv'",
+    "ALTER TABLE resources ADD COLUMN poster_url TEXT",
+    "ALTER TABLE resources ADD COLUMN overview TEXT",
+    "ALTER TABLE resources ADD COLUMN total_episodes INTEGER DEFAULT 0",
+    "ALTER TABLE resources ADD COLUMN cached_episodes INTEGER DEFAULT 0",
+    "ALTER TABLE resources ADD COLUMN latest_episode INTEGER DEFAULT 0",
+    "ALTER TABLE resources ADD COLUMN seasons_json TEXT DEFAULT '[]'",
+    "ALTER TABLE resources ADD COLUMN replace_rules_json TEXT DEFAULT '[]'",
+    "ALTER TABLE resource_files ADD COLUMN season_number INTEGER",
+    "ALTER TABLE resource_files ADD COLUMN episode_number INTEGER",
+    "ALTER TABLE resource_files ADD COLUMN display_name TEXT",
+    "ALTER TABLE resource_files ADD COLUMN tmdb_valid INTEGER DEFAULT 1",
 ]
 
 

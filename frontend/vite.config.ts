@@ -15,7 +15,10 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // 监听所有网卡：本机 localhost 和同一 WiFi 下的手机都能访问
+    host: '0.0.0.0',
     port: 5173,
+    strictPort: true,
     proxy: {
       '/api': {
         target: 'http://localhost:8767',
