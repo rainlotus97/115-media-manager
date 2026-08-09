@@ -11,4 +11,5 @@ const items: { page: ActivePage; icon: string; label: string }[] = [
 <style scoped>
 .bottom-bar { position:fixed; inset:auto 0 0; z-index:10; height:70px; padding-bottom:env(safe-area-inset-bottom); display:flex; background:var(--bg-secondary); border-top:1px solid var(--border); }
 button { flex:1; border:0; background:transparent; color:var(--text-muted); display:grid; place-content:center; gap:3px; font-size:11px; } b { font-size:18px; font-weight:500; } button.active { color:var(--accent); }
+@media (min-width: 768px) { .bottom-bar { display: none; } }
 </style>

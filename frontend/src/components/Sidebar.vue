@@ -30,4 +30,5 @@ button:hover { background:var(--bg-card-hover); color:var(--text-primary); }
 button.active { background:var(--accent-glow); color:var(--accent); font-weight:650; }
 button span { width:20px; text-align:center; font-size:18px; } em { font-style:normal; white-space:nowrap; }
 .compact button { justify-content:center; padding:0; }
+@media (max-width: 767px) { .sidebar { display: none; } }
 </style>
