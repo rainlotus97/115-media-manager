@@ -6,6 +6,7 @@ __pycache__/
 115-media.db
 115-media.db-*
 115-config.json
+115-qr-logins.json
 frontend/node_modules/
 node_modules/
 frontend/dist/
