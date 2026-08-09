@@ -835,59 +835,74 @@ def _receive_record_matches(rec, files, target_title):
 
 
 _SEASON_DIR_RE = re.compile(
-    r"^(?:season\s*\.?\s*\d+|s\d{1,2}\s*$|第\s*\d{1,2}\s*季|\d{1,2}$)",
+    r"^(?:season\s*\.?\s*\d+|s\d{1,2}\b|第\s*\d{1,2}\s*季|\d{1,4}(?:[~\-～]\d{1,4})?[.\s_]|sp\b|ova\b|剧场版|特别篇|番外)",
     re.IGNORECASE,
 )
 
+_CATEGORY_NAMES = {
+    "资源库", "根目录", "动漫", "动画", "电视剧", "剧集", "电影", "影片",
+    "综艺", "纪录片", "音乐", "影视", "网盘", "115网盘", "我的资源",
+}
+
 
 def _detect_resource_folders(root_cid, root_name, folders, files):
-    """自动识别“资源”层级：直接包含集数文件的文件夹才是一项。
-    例如 资源库/动漫/斗罗大陆/xxx.S01E01.mp4 → 斗罗大陆；
-    斗罗大陆/xxx/xxx.mp4 与 斗罗大陆/xxx.mp4 混合时仍归并为 斗罗大陆。
-    Season 1 / S01 / 第1季 等季目录会向上归并到最近的非季目录。
+    """自动识别“资源”层级，避免把分类目录（资源库/动漫）当成一项。
+
+    规则：
+    - 文件夹直接包含集数文件 → 本层就是一个资源（子目录并入）；
+    - 无直接集数文件的容器：已知分类名 → 下钻；只有一个非“分部”子目录 → 下钻；
+      子目录数量多且大多不是分部命名 → 视为分类下钻；其余（季/分部/集数区间等）→ 合并为本层资源。
     """
-    direct_eps = Counter()
+    nodes = {"": {"fid": root_cid, "name": root_name or "根目录", "path": "",
+                  "children": [], "episode_files": 0, "sub_episodes": 0}}
+    for f in folders:
+        nodes[f["path"]] = {"fid": f["fid"], "name": f["name"], "path": f["path"],
+                            "children": [], "episode_files": 0, "sub_episodes": 0}
+    for f in folders:
+        parent = f["path"].rpartition("/")[0]
+        if parent in nodes:
+            nodes[parent]["children"].append(nodes[f["path"]])
     for f in files:
-        if sync.parse_episode(f.get("name", "")):
-            direct_eps[f.get("path", "")] += 1
+        p = f.get("path", "")
+        if p in nodes and sync.parse_episode(f.get("name", "")):
+            nodes[p]["episode_files"] += 1
+    for node in nodes.values():
+        node["children"].sort(key=lambda c: c["path"])
 
-    def parent_path(p):
-        return p.rpartition("/")[0] if "/" in p else ""
+    def fill_sub(node):
+        node["sub_episodes"] = node["episode_files"] + sum(fill_sub(c) for c in node["children"])
+        return node["sub_episodes"]
 
-    resources = {}
-    for p in direct_eps:
-        if direct_eps[p] <= 0:
-            continue
-        cur = p
-        while parent_path(cur) and direct_eps.get(parent_path(cur), 0) > 0:
-            cur = parent_path(cur)
-        resources[cur] = True
+    fill_sub(nodes[""])
 
-    folder_by_path = {f["path"]: f for f in folders}
-
-    def is_seasonish(p):
-        name = root_name if p == "" else p.rpartition("/")[2]
+    def looks_part(name):
         return bool(_SEASON_DIR_RE.match((name or "").strip()))
 
-    changed = True
-    while changed:
-        changed = False
-        for p in list(resources):
-            if p and is_seasonish(p):
-                resources.pop(p, None)
-                parent = parent_path(p)
-                if parent:
-                    resources[parent] = True
-                changed = True
+    def classify(node):
+        if node["episode_files"] > 0:
+            return [{"fid": node["fid"], "name": node["name"], "path": node["path"]}], True
+        child_results = []
+        ep_kids = []
+        for child in node["children"]:
+            res, has_ep = classify(child)
+            if has_ep:
+                ep_kids.append(child)
+            if res:
+                child_results.extend(res)
+        if not child_results:
+            return [], node["sub_episodes"] > 0
+        name = node["name"] or ""
+        if name.strip() in _CATEGORY_NAMES or node["path"] == "":
+            return child_results, True
+        if len(ep_kids) == 1 and not looks_part(ep_kids[0]["name"]):
+            return child_results, True
+        part_like = sum(1 for k in ep_kids if looks_part(k["name"]))
+        if len(ep_kids) >= 4 and part_like * 2 < len(ep_kids):
+            return child_results, True
+        # 季/分部/集数区间等少量子目录 → 合并为本层资源
+        return [{"fid": node["fid"], "name": node["name"], "path": node["path"]}], True
 
-    result = []
-    for p in resources:
-        if p == "":
-            result.append({"fid": root_cid, "name": root_name or "根目录", "path": ""})
-        else:
-            info = folder_by_path.get(p)
-            if info:
-                result.append({"fid": info["fid"], "name": info["name"], "path": info["path"]})
+    result, _ = classify(nodes[""])
     result.sort(key=lambda r: r["path"])
     return result
 
