@@ -788,7 +788,7 @@ def _resource_matches(files):
     result = {}
     for item in candidates:
         row = lookup.get((item.get("name", ""), int(item.get("size") or 0)))
-        if row and row.get("tmdb_valid", 1) != 0:
+        if row and (row["tmdb_valid"] or 1) != 0:
             entry = result.setdefault(row["resource_id"], {
                 "resource_id": row["resource_id"], "title": row["title"],
                 "path_115": row["path_115"], "matched_file_ids": [],
